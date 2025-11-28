@@ -5,11 +5,10 @@ from pyrogram import Client, filters
 # ------------------------
 # Telegram Bot Credentials
 # ------------------------
-BOT_TOKEN = "Token"
-API_ID = 287...105
-API_HASH = "df17fae73be3077"
-OWNER_ID = ......
-MONGO_DB_URI = "..."
+BOT_TOKEN = "8314045999:AAFk45sqRkbIUXdK3F9t0wsKXTvub6l8zfw"
+API_ID = 22657083
+API_HASH = "d6186691704bd901bdab275ceaab88f3"
+OWNER_ID = 8188588913
 
 # ------------------------
 # Logging setup

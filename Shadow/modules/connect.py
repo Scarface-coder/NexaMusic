@@ -30,9 +30,8 @@ async def connect_account(client, message):
     session = args[1].strip()
 
     try:
-        # Create assistant client
         ass = Client(
-            name=f"assistant_temp",
+            name="assistant_temp",
             api_id=API_ID,
             api_hash=API_HASH,
             session_string=session,
@@ -47,19 +46,18 @@ async def connect_account(client, message):
             return await message.reply("❌ Invalid session string!")
 
         # Save DB
-        assist_db.update_one(
+        await assist_db.update_one(
             {"user_id": me.id},
             {
                 "$set": {
                     "user_id": me.id,
                     "phone": me.phone_number,
-                    "session_string": session
+                    "session_string": session,
                 }
             },
             upsert=True
         )
 
-        # runtime store
         active_clients[me.id] = ass
 
         await message.reply(
@@ -89,14 +87,13 @@ async def disconnect_account(client, message):
 
     target = args[1].strip()
 
-    # Method 1: by numeric UserID
+    # by userid
     if target.isdigit():
         uid = int(target)
-        data = assist_db.find_one({"user_id": uid})
+        data = await assist_db.find_one({"user_id": uid})
         if not data:
             return await message.reply("❌ UserID not found in assistant list.")
 
-        # stop live session
         if uid in active_clients:
             try:
                 await active_clients[uid].disconnect()
@@ -104,28 +101,27 @@ async def disconnect_account(client, message):
                 pass
             del active_clients[uid]
 
-        assist_db.delete_one({"user_id": uid})
+        await assist_db.delete_one({"user_id": uid})
 
         return await message.reply(f"🛑 Assistant <code>{uid}</code> disconnected.")
 
-    # Method 2: by session string
-    else:
-        data = assist_db.find_one({"session_string": target})
-        if not data:
-            return await message.reply("❌ Session string not found in DB.")
+    # by session
+    data = await assist_db.find_one({"session_string": target})
+    if not data:
+        return await message.reply("❌ Session string not found in DB.")
 
-        uid = data["user_id"]
+    uid = data["user_id"]
 
-        if uid in active_clients:
-            try:
-                await active_clients[uid].disconnect()
-            except:
-                pass
-            del active_clients[uid]
+    if uid in active_clients:
+        try:
+            await active_clients[uid].disconnect()
+        except:
+            pass
+        del active_clients[uid]
 
-        assist_db.delete_one({"session_string": target})
+    await assist_db.delete_one({"session_string": target})
 
-        return await message.reply(f"🛑 Assistant <code>{uid}</code> removed.")
+    await message.reply(f"🛑 Assistant <code>{uid}</code> removed.")
 
 
 # ----------- ACCOUNT LIST ------------ #
@@ -136,16 +132,17 @@ async def acclist(client, message):
     if not is_owner(message.from_user.id):
         return
 
-    accounts = assist_db.find()
+    cursor = assist_db.find()
     text = "<b>📂 Connected Assistants:</b>\n\n"
 
     count = 0
-    for acc in accounts:      # FIXED: no async for
+
+    async for acc in cursor:   # ← FIXED
         count += 1
         text += (
             f"{count}. <b>UserID:</b> <code>{acc['user_id']}</code>\n"
             f"📱 Phone: <code>{acc.get('phone', 'N/A')}</code>\n"
-            f"🔑 Session: <code>{acc['session_string'][:20]}...****</code>\n\n"
+            f"🔑 Session: <code>{acc['session_string']</code>\n\n"
         )
 
     if count == 0:

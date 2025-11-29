@@ -71,7 +71,7 @@ async def joingc_cmd(_, message):
 
 
 # ================================
-# /join — JOIN VC
+# /join — JOIN VC (chat_id only)
 # ================================
 @app.on_message(filters.command("join") & filters.private)
 async def join_vc_cmd(_, message):
@@ -80,9 +80,15 @@ async def join_vc_cmd(_, message):
 
     args = message.text.split(None, 1)
     if len(args) < 2:
-        return await message.reply("Usage:\n/join <chat_id | @username>")
+        return await message.reply("Usage:\n/join <chat_id> (numeric only)")
 
     chat = args[1].strip()
+
+    # Ensure numeric chat_id
+    if not chat.isdigit():
+        return await message.reply("⚠️ Only numeric chat IDs are allowed for /join.")
+
+    chat_id = int(chat)
     ok = not_in_gc = err = 0
 
     assistants = assist_db.find()
@@ -95,7 +101,7 @@ async def join_vc_cmd(_, message):
         try:
             # check membership
             try:
-                await cli.get_chat_member(chat, uid)
+                await cli.get_chat_member(chat_id, uid)
             except UserNotParticipant:
                 not_in_gc += 1
                 continue
@@ -103,17 +109,21 @@ async def join_vc_cmd(_, message):
             # get tgcall client
             tgc = get_tgcalls(uid, cli)
 
-            # join VC with silent placeholder stream
-            await tgc.join_group_call(chat_id=int(chat), input_stream=AudioPiped("placeholder.mp3"))
+            # join VC with silent placeholder
+            await tgc.join_group_call(
+                chat_id=chat_id,
+                input_stream=AudioPiped("placeholder.mp3")
+            )
 
             ok += 1
 
             # save vc session
             vc_db.update_one(
                 {"user_id": uid},
-                {"$set": {"chat_id": chat}},
+                {"$set": {"chat_id": chat_id}},
                 upsert=True
             )
+
         except Exception as e:
             print(f"[VC JOIN ERROR] {e}")
             err += 1
@@ -124,13 +134,13 @@ async def join_vc_cmd(_, message):
     )
 
     if not_in_gc > 0:
-        msg += "\n⚠️ Use <code>/joingc</code> first."
+        msg += "\n⚠️ Make sure assistants are in the group first."
 
     await message.reply(msg)
 
 
 # ================================
-# /leave — LEAVE VC
+# /leave — LEAVE VC (chat_id only)
 # ================================
 @app.on_message(filters.command("leave") & filters.private)
 async def leave_vc_cmd(_, message):
@@ -147,10 +157,16 @@ async def leave_vc_cmd(_, message):
             vc_db.delete_one({"user_id": uid})
             continue
 
+        # ensure chat_id is numeric
+        if not str(chat).isdigit():
+            vc_db.delete_one({"user_id": uid})
+            continue
+
+        chat_id = int(chat)
         cli = active_clients[uid]
         tgc = get_tgcalls(uid, cli)
         try:
-            await tgc.leave_group_call(chat_id=int(chat))
+            await tgc.leave_group_call(chat_id=chat_id)
             ok += 1
             vc_db.delete_one({"user_id": uid})
         except GroupCallNotFound:

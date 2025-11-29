@@ -8,7 +8,7 @@ from .connect import active_clients
 assist_db = mongodb.assistants
 
 
-# Check sudo OR owner
+# Check sudo or owner
 def is_sudo(uid):
     if uid == OWNER_ID:
         return True
@@ -35,7 +35,7 @@ async def leave_vc_cmd(client, message):
 
     assistants = assist_db.find()
 
-    async for acc in assistants:
+    for acc in assistants:        # FIXED → no async for
         uid = acc["user_id"]
 
         if uid not in active_clients:
@@ -44,18 +44,19 @@ async def leave_vc_cmd(client, message):
         cli = active_clients[uid]
 
         try:
-            # Check if assistant is present in the chat
+            # check participation
             try:
                 await cli.get_chat_member(chat, uid)
             except UserNotParticipant:
                 not_in_gc += 1
                 continue
 
-            # Leave VC
-            await cli.leave_voice_chat(chat)
+            # leave VC
+            await cli.leave_call(chat)      # FIXED FUNCTION
             ok += 1
 
-        except Exception:
+        except Exception as e:
+            print(f"[LEAVE VC ERROR] {e}")
             err += 1
 
     msg = (
@@ -66,7 +67,6 @@ async def leave_vc_cmd(client, message):
     )
 
     await message.reply(msg)
-
 
 
 # ---------------------- LEAVE GROUP CHAT ---------------------- #
@@ -88,7 +88,7 @@ async def leave_gc_cmd(client, message):
 
     assistants = assist_db.find()
 
-    async for acc in assistants:
+    for acc in assistants:        # FIXED → no async for
         uid = acc["user_id"]
 
         if uid not in active_clients:
@@ -97,17 +97,19 @@ async def leave_gc_cmd(client, message):
         cli = active_clients[uid]
 
         try:
-            # If present → leave group
+            # confirm membership
             try:
                 await cli.get_chat_member(chat, uid)
             except UserNotParticipant:
                 fail += 1
                 continue
 
+            # leave group
             await cli.leave_chat(chat)
             ok += 1
 
-        except Exception:
+        except Exception as e:
+            print(f"[LEAVE GC ERROR] {e}")
             fail += 1
 
     await message.reply(

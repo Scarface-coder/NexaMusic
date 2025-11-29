@@ -8,11 +8,12 @@ from .connect import active_clients
 assist_db = mongodb.assistants
 
 
-# Check sudo or owner
-def is_sudo(uid):
+# ---------------------- SUDO CHECK ---------------------- #
+
+async def is_sudo(uid):
     if uid == OWNER_ID:
         return True
-    return sudo_db.find_one({"user_id": uid}) is not None
+    return await sudo_db.find_one({"user_id": uid}) is not None
 
 
 # ---------------------- LEAVE VC ---------------------- #
@@ -20,7 +21,7 @@ def is_sudo(uid):
 @app.on_message(filters.command("leave") & filters.private)
 async def leave_vc_cmd(client, message):
 
-    if not is_sudo(message.from_user.id):
+    if not await is_sudo(message.from_user.id):
         return
 
     args = message.text.split(maxsplit=1)
@@ -33,9 +34,9 @@ async def leave_vc_cmd(client, message):
     not_in_gc = 0
     err = 0
 
-    assistants = assist_db.find()
+    cursor = assist_db.find()
 
-    for acc in assistants:        # FIXED → no async for
+    async for acc in cursor:      # FIXED (async for)
         uid = acc["user_id"]
 
         if uid not in active_clients:
@@ -44,15 +45,16 @@ async def leave_vc_cmd(client, message):
         cli = active_clients[uid]
 
         try:
-            # check participation
+            # Check participation
             try:
                 await cli.get_chat_member(chat, uid)
             except UserNotParticipant:
                 not_in_gc += 1
                 continue
 
-            # leave VC
-            await cli.leave_call(chat)      # FIXED FUNCTION
+            # leave voice chat (your custom logic)
+            await cli.leave_call(chat)       # OK
+
             ok += 1
 
         except Exception as e:
@@ -74,7 +76,7 @@ async def leave_vc_cmd(client, message):
 @app.on_message(filters.command("leavegc") & filters.private)
 async def leave_gc_cmd(client, message):
 
-    if not is_sudo(message.from_user.id):
+    if not await is_sudo(message.from_user.id):
         return
 
     args = message.text.split(maxsplit=1)
@@ -86,9 +88,9 @@ async def leave_gc_cmd(client, message):
     ok = 0
     fail = 0
 
-    assistants = assist_db.find()
+    cursor = assist_db.find()
 
-    for acc in assistants:        # FIXED → no async for
+    async for acc in cursor:      # FIXED
         uid = acc["user_id"]
 
         if uid not in active_clients:
@@ -97,14 +99,13 @@ async def leave_gc_cmd(client, message):
         cli = active_clients[uid]
 
         try:
-            # confirm membership
+            # Confirm membership
             try:
                 await cli.get_chat_member(chat, uid)
             except UserNotParticipant:
                 fail += 1
                 continue
 
-            # leave group
             await cli.leave_chat(chat)
             ok += 1
 

@@ -1,5 +1,5 @@
 from pyrogram import filters
-from pyrogram.errors import UserAlreadyParticipant, InviteHashExpired, UserNotParticipant
+from pyrogram.errors import UserAlreadyParticipant, InviteHashExpired, UserNotParticipant, PeerIdInvalid
 from Shadow import app, OWNER_ID
 from Shadow.mongo import mongodb
 from .sudo import sudo_db

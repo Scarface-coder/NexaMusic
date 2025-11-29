@@ -57,6 +57,16 @@ async def joingc_cmd(_, message):
         try:
             await cli.join_chat(target)
             ok += 1
+
+            # Send dummy message to create chat entry
+            try:
+                chat = await cli.get_chat(target)
+                await cli.send_message(chat.id, "Hehe 😁")
+                # Notify owner with chat_id
+                await app.send_message(OWNER_ID, f"Assistant {uid} joined GC.\nChat ID: <code>{chat.id}</code>")
+            except Exception as e:
+                print(f"[DUMMY MSG ERROR] {e}")
+
         except UserAlreadyParticipant:
             ok += 1
         except InviteHashExpired:
@@ -68,7 +78,6 @@ async def joingc_cmd(_, message):
     await message.reply(
         f"📌 <b>Group Join Result</b>\n\n🟢 Joined: <b>{ok}</b>\n🔴 Failed: <b>{fail}</b>"
     )
-
 
 
 # ================================
@@ -103,11 +112,7 @@ async def join_vc_cmd(_, message):
             # ensure assistant is a member first
             try:
                 await cli.get_chat_member(chat_id, uid)
-            except UserNotParticipant:
-                not_in_gc += 1
-                continue
-            except PeerIdInvalid:
-                # maybe the bot hasn't interacted with the chat yet
+            except (UserNotParticipant, PeerIdInvalid):
                 not_in_gc += 1
                 continue
 

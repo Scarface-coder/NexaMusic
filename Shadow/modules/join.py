@@ -2,13 +2,14 @@ from pyrogram import filters
 from pyrogram.errors import UserAlreadyParticipant, InviteHashExpired, UserNotParticipant
 from Shadow import app, OWNER_ID
 from Shadow.mongo import mongodb
-from .sudo import sudo_db   # sudo list from your sudo module
-from .connect import active_clients  # active assistant clients
+from .sudo import sudo_db
+from .connect import active_clients   # {user_id: Client}
 
 assist_db = mongodb.assistants
 
 
-# Check if user is sudo or owner
+# -------------------- CHECK SUDO -------------------- #
+
 def is_sudo(uid):
     if uid == OWNER_ID:
         return True
@@ -18,12 +19,13 @@ def is_sudo(uid):
 # -------------------- /joingc -------------------- #
 
 @app.on_message(filters.command("joingc") & filters.private)
-async def joingc_cmd(client, message):
+async def joingc_cmd(_, message):
 
     if not is_sudo(message.from_user.id):
         return
 
-    args = message.text.split(maxsplit=1)
+    args = message.text.split(None, 1)
+
     if len(args) < 2:
         return await message.reply("Usage:\n/joingc <invitelink | @username>")
 
@@ -32,10 +34,9 @@ async def joingc_cmd(client, message):
     ok = 0
     fail = 0
 
-    # fetch all assistant accounts
-    assistants = assist_db.find()
+    assistants = assist_db.find()   # pymongo cursor (NOT async)
 
-    async for acc in assistants:
+    for acc in assistants:
         uid = acc["user_id"]
 
         if uid not in active_clients:
@@ -45,12 +46,11 @@ async def joingc_cmd(client, message):
 
         try:
             if target.startswith("https://t.me/+"):
-                # Invite link join
+                # invite link (private)
                 invite = target.split("+")[1]
                 await cli.join_chat(invite)
-
             else:
-                # Username or public chat
+                # public username or chat_id
                 await cli.join_chat(target)
 
             ok += 1
@@ -59,7 +59,8 @@ async def joingc_cmd(client, message):
             ok += 1
         except InviteHashExpired:
             fail += 1
-        except Exception:
+        except Exception as e:
+            print(f"[JOIN GC ERROR] {e}")
             fail += 1
 
     await message.reply(
@@ -69,15 +70,16 @@ async def joingc_cmd(client, message):
     )
 
 
-# -------------------- /join (VC join) -------------------- #
+# -------------------- /join (VC JOIN) -------------------- #
 
 @app.on_message(filters.command("join") & filters.private)
-async def join_vc_cmd(client, message):
+async def join_vc_cmd(_, message):
 
     if not is_sudo(message.from_user.id):
         return
 
-    args = message.text.split(maxsplit=1)
+    args = message.text.split(None, 1)
+
     if len(args) < 2:
         return await message.reply("Usage:\n/join <chat_id | @username | invite>")
 
@@ -89,7 +91,7 @@ async def join_vc_cmd(client, message):
 
     assistants = assist_db.find()
 
-    async for acc in assistants:
+    for acc in assistants:
         uid = acc["user_id"]
 
         if uid not in active_clients:
@@ -98,18 +100,19 @@ async def join_vc_cmd(client, message):
         cli = active_clients[uid]
 
         try:
-            # Check if assistant already in chat
+            # check if bot is in group
             try:
                 await cli.get_chat_member(chat, uid)
             except UserNotParticipant:
                 not_in_gc += 1
                 continue
 
-            # joining voice chat
-            await cli.join_voice_chat(chat)
+            # join vc
+            await cli.join_call(chat)
             ok += 1
 
-        except Exception:
+        except Exception as e:
+            print(f"[VC JOIN ERROR] {e}")
             err += 1
 
     msg = (
@@ -120,6 +123,6 @@ async def join_vc_cmd(client, message):
     )
 
     if not_in_gc > 0:
-        msg += "\n\n⚠️ First use <code>/joingc</code> to add accounts in this chat."
+        msg += "\n\n⚠️ First use <code>/joingc</code> to add assistants in this chat."
 
     await message.reply(msg)

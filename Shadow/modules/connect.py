@@ -142,7 +142,7 @@ async def acclist(client, message):
         text += (
             f"{count}. <b>UserID:</b> <code>{acc['user_id']}</code>\n"
             f"📱 Phone: <code>{acc.get('phone', 'N/A')}</code>\n"
-            f"🔑 Session: <code>{acc['session_string']</code>\n\n"
+            f"🔑 Session: <code>{acc['session_string'][:20]}...****</code>\n\n"
         )
 
     if count == 0:

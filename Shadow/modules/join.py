@@ -1,19 +1,15 @@
 from pyrogram import filters
-from pyrogram.errors import (
-    UserAlreadyParticipant,
-    InviteHashExpired,
-    UserNotParticipant
-)
+from pyrogram.errors import UserAlreadyParticipant, InviteHashExpired, UserNotParticipant
 from Shadow import app, OWNER_ID
 from Shadow.mongo import mongodb
 from .sudo import sudo_db
 from .connect import active_clients
-from pytgcalls import PyTgCalls
+from pytgcalls import PyTgClient
 from pytgcalls.exceptions import GroupCallNotFound
+from pytgcalls.types.input_stream import InputAudioStream
 
 assist_db = mongodb.assistants
-vc_db = mongodb.vc_sessions     # stores which assistant is in which vc
-
+vc_db = mongodb.vc_sessions  # stores which assistant is in which VC
 
 # ================================
 # SUDO CHECK
@@ -25,14 +21,13 @@ def is_sudo(uid):
 
 
 # ================================
-# TG CALL CLIENTS
+# TG CALL CLIENTS (v3)
 # ================================
 tg_clients = {}
 
 def get_tgcalls(uid, cli):
     if uid not in tg_clients:
-        tg = PyTgCalls(cli)
-        tg.start()
+        tg = PyTgClient(client=cli)
         tg_clients[uid] = tg
     return tg_clients[uid]
 
@@ -42,7 +37,6 @@ def get_tgcalls(uid, cli):
 # ================================
 @app.on_message(filters.command("joingc") & filters.private)
 async def joingc_cmd(_, message):
-
     if not is_sudo(message.from_user.id):
         return
 
@@ -51,37 +45,27 @@ async def joingc_cmd(_, message):
         return await message.reply("Usage:\n/joingc <invitelink | @username>")
 
     target = args[1].strip()
-
     ok = fail = 0
 
     assistants = assist_db.find()
-
-    async for acc in assistants:       # FIXED — async for
+    async for acc in assistants:
         uid = acc["user_id"]
-
         if uid not in active_clients:
             continue
-
         cli = active_clients[uid]
-
         try:
             await cli.join_chat(target)
             ok += 1
-
         except UserAlreadyParticipant:
             ok += 1
-
         except InviteHashExpired:
             fail += 1
-
         except Exception as e:
             print(f"[JOIN GC ERROR] {e}")
             fail += 1
 
     await message.reply(
-        f"📌 <b>Group Join Result</b>\n\n"
-        f"🟢 Joined: <b>{ok}</b>\n"
-        f"🔴 Failed: <b>{fail}</b>"
+        f"📌 <b>Group Join Result</b>\n\n🟢 Joined: <b>{ok}</b>\n🔴 Failed: <b>{fail}</b>"
     )
 
 
@@ -90,7 +74,6 @@ async def joingc_cmd(_, message):
 # ================================
 @app.on_message(filters.command("join") & filters.private)
 async def join_vc_cmd(_, message):
-
     if not is_sudo(message.from_user.id):
         return
 
@@ -99,19 +82,13 @@ async def join_vc_cmd(_, message):
         return await message.reply("Usage:\n/join <chat_id | @username>")
 
     chat = args[1].strip()
-
-    ok = 0
-    not_in_gc = 0
-    err = 0
+    ok = not_in_gc = err = 0
 
     assistants = assist_db.find()
-
-    async for acc in assistants:       # FIXED — async for
+    async for acc in assistants:
         uid = acc["user_id"]
-
         if uid not in active_clients:
             continue
-
         cli = active_clients[uid]
 
         try:
@@ -124,9 +101,15 @@ async def join_vc_cmd(_, message):
 
             # get tgcall client
             tgc = get_tgcalls(uid, cli)
+            if not tgc.is_connected:
+                await tgc.start()
 
-            # join vc
-            await tgc.join_group_call(int(chat))
+            # join VC (v3 uses InputAudioStream if needed later)
+            await tgc.join_group_call(
+                chat_id=int(chat),
+                input_stream=InputAudioStream('placeholder.raw')  # silent placeholder
+            )
+
             ok += 1
 
             # save vc session
@@ -141,10 +124,8 @@ async def join_vc_cmd(_, message):
             err += 1
 
     msg = (
-        f"🎧 <b>VC Join Result</b>\n\n"
-        f"🟢 VC Joined: <b>{ok}</b>\n"
-        f"🟡 Not in Group: <b>{not_in_gc}</b>\n"
-        f"🔴 Errors: <b>{err}</b>"
+        f"🎧 <b>VC Join Result</b>\n\n🟢 VC Joined: <b>{ok}</b>\n"
+        f"🟡 Not in Group: <b>{not_in_gc}</b>\n🔴 Errors: <b>{err}</b>"
     )
 
     if not_in_gc > 0:
@@ -158,16 +139,12 @@ async def join_vc_cmd(_, message):
 # ================================
 @app.on_message(filters.command("leave") & filters.private)
 async def leave_vc_cmd(_, message):
-
     if not is_sudo(message.from_user.id):
         return
 
-    ok = 0
-    err = 0
-
+    ok = err = 0
     sessions = vc_db.find()
-
-    async for acc in sessions:       # FIXED — async for
+    async for acc in sessions:
         uid = acc["user_id"]
         chat = acc["chat_id"]
 
@@ -177,21 +154,18 @@ async def leave_vc_cmd(_, message):
 
         cli = active_clients[uid]
         tgc = get_tgcalls(uid, cli)
-
         try:
-            await tgc.leave_group_call(int(chat))
+            if not tgc.is_connected:
+                await tgc.start()
+            await tgc.leave_group_call(chat_id=int(chat))
             ok += 1
             vc_db.delete_one({"user_id": uid})
-
         except GroupCallNotFound:
             vc_db.delete_one({"user_id": uid})
-
         except Exception as e:
             print(f"[VC LEAVE ERROR] {e}")
             err += 1
 
     await message.reply(
-        f"🚪 <b>VC Leave Result</b>\n\n"
-        f"🟢 Left: <b>{ok}</b>\n"
-        f"🔴 Errors: <b>{err}</b>"
+        f"🚪 <b>VC Leave Result</b>\n\n🟢 Left: <b>{ok}</b>\n🔴 Errors: <b>{err}</b>"
     )

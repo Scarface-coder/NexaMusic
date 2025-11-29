@@ -118,11 +118,12 @@ async def join_vc_cmd(_, message):
 
             # get tgcall client
             tgc = get_tgcalls(uid, cli)
+            await tgc.start()  # must await in v0.9.7
 
-            # join VC with silent placeholder
+            # join VC (AudioPiped first, then chat_id)
             await tgc.join_group_call(
-                chat_id=chat_id,
-                input_stream=AudioPiped("placeholder.mp3")
+                AudioPiped("placeholder.mp3"),
+                chat_id
             )
 
             ok += 1
@@ -176,7 +177,8 @@ async def leave_vc_cmd(_, message):
         cli = active_clients[uid]
         tgc = get_tgcalls(uid, cli)
         try:
-            await tgc.leave_group_call(chat_id=chat_id)
+            await tgc.start()  # must await in v0.9.7
+            await tgc.leave_group_call(chat_id)
             ok += 1
             vc_db.delete_one({"user_id": uid})
         except GroupCallNotFound:

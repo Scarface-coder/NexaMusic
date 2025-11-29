@@ -3,20 +3,19 @@ from Shadow import app, OWNER_ID
 from Shadow.mongo import mongodb
 from .sudo import sudo_db
 from .connect import active_clients     # {user_id: Client}
-from pytgcalls import PyTgCalls
-from pytgcalls.types import AudioPiped
+from pytgcalls import PyTgClient
+from pytgcalls.types.input_stream import InputAudioStream
 
 assist_db = mongodb.assistants
 vc_db = mongodb.vc_sessions            # {user_id, chat_id}
 
-# PyTgCalls client cache
+# TGCall client cache
 tg_clients = {}
 
-
 def get_tgc(uid, cli):
+    """Get or create PyTgClient for assistant"""
     if uid not in tg_clients:
-        tgc = PyTgCalls(cli)
-        tgc.start()
+        tgc = PyTgClient(cli)
         tg_clients[uid] = tgc
     return tg_clients[uid]
 
@@ -43,19 +42,16 @@ async def play_cmd(client, message):
     # Download audio file
     file_path = await message.reply_to_message.download()
 
-    ok = 0
-    not_in_vc = 0
-    err = 0
+    ok = not_in_vc = err = 0
 
     assistants = assist_db.find()
-
-    async for acc in assistants:       # FIXED async iteration
+    async for acc in assistants:       # async iteration
         uid = acc["user_id"]
 
         if uid not in active_clients:
             continue
 
-        # Check VC session from DB
+        # Check VC session
         vc_session = await vc_db.find_one({"user_id": uid})
         if not vc_session:
             not_in_vc += 1
@@ -66,10 +62,14 @@ async def play_cmd(client, message):
         tgc = get_tgc(uid, cli)
 
         try:
-            # Play in VC
+            # Start TGCall client if not running
+            if not tgc.is_connected:
+                await tgc.start()
+
+            # Play audio in VC
             await tgc.change_stream(
-                chat_id,
-                AudioPiped(file_path)
+                chat_id=chat_id,
+                input_stream=InputAudioStream(file_path)
             )
             ok += 1
 

@@ -1,66 +1,56 @@
-import asyncio
-from pyrogram import filters
-from pyrogram.types import Message
-from pytgcalls import PyTgCalls
-from pytgcalls.types.input_stream import InputAudioStream
-
 from Shadow import app, OWNER_ID
 from Shadow.mongo import mongodb
 from .sudo import sudo_db
-from .connect import active_clients   # {user_id: Client}
+from .connect import active_clients  # {user_id: Client}
 
-
-# ============================
-#  /play <chat_id> (reply to mp3)
-# ============================
 @app.on_message(filters.command("play") & filters.private)
-async def play_multi(_, message: Message):
-
-    # check sudo
+async def play_multi(client, message):
     user_id = message.from_user.id
-    if user_id not in sudo_db():
-        return await message.reply("⛔ Only SUDO users can use this.")
 
-    # check reply audio
-    if not message.reply_to_message or not message.reply_to_message.audio:
-        return await message.reply("Reply to an audio file.\nUsage:\n`/play -100123456789`")
+    # Fetch sudo users
+    sudo_users = await sudo_db.find().to_list(None)
+    sudo_list = [x["user_id"] for x in sudo_users]
 
-    audio = message.reply_to_message.audio
+    # Also owner is sudo
+    sudo_list.append(OWNER_ID)
 
-    # check argument
+    # Check permission
+    if user_id not in sudo_list:
+        return await message.reply("❌ Only sudo users can use multi-play command.")
+
+    # Your play logic
+    args = message.text.split()
+    if len(args) < 2 and not message.reply_to_message:
+        return await message.reply("Usage: /play <chat_id> or reply to an mp3")
+
+    target_chat = None
+
+    if message.reply_to_message:
+        target_chat = args[1] if len(args) > 1 else None
+    else:
+        target_chat = args[1]
+
     try:
-        chat_id = int(message.text.split()[1])
+        target_chat = int(target_chat)
     except:
-        return await message.reply("❌ Please give valid chat id.\n\nExample: `/play -10083837382`")
+        return await message.reply("Invalid chat ID!")
 
-    # check active userbot client
+    # Connect the assistant account
     if user_id not in active_clients:
-        return await message.reply(
-            "⚠️ Your assistant account is not connected.\n\nUse: `/connect` first."
-        )
+        return await message.reply("❌ You are not connected with assistant!")
 
-    userbot = active_clients[user_id]
-    call = PyTgCalls(userbot)
+    client_acc = active_clients[user_id]
 
-    # START
-    status = await message.reply("➡ Downloading audio...")
-
-    # download file
-    file_path = await userbot.download_media(audio)
-
-    await status.edit("➡ Joining VC...")
-
-    # join the VC
+    # Join VC
     try:
-        await call.join_group_call(
-            chat_id,
-            InputAudioStream(file_path)
-        )
+        await client_acc.join_chat(target_chat)
     except Exception as e:
-        return await status.edit(f"❌ VC Join Error:\n{e}")
+        return await message.reply(f"Join error: {e}")
 
-    await status.edit(
-        f"✅ **Playing Audio**\n\n"
-        f"Chat: `{chat_id}`\n"
-        f"Userbot: `{userbot.me.first_name}`"
-    )
+    # Play audio
+    if message.reply_to_message and message.reply_to_message.audio:
+        audio = message.reply_to_message.audio.file_id
+        await client_acc.send_audio(target_chat, audio)
+        return await message.reply("▶️ Playing audio in target chat!")
+
+    return await message.reply("Done!")

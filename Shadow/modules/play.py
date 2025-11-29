@@ -2,10 +2,23 @@ from pyrogram import filters
 from Shadow import app, OWNER_ID
 from Shadow.mongo import mongodb
 from .sudo import sudo_db
-from .connect import active_clients
-from .join import assistant_vc   # {assistant_user_id: chat_id}
+from .connect import active_clients     # {user_id: Client}
+from pytgcalls import PyTgCalls
+from pytgcalls.types import AudioPiped
 
 assist_db = mongodb.assistants
+vc_db = mongodb.vc_sessions            # {user_id, chat_id}
+
+# PyTgCalls client cache
+tg_clients = {}
+
+
+def get_tgc(uid, cli):
+    if uid not in tg_clients:
+        tgc = PyTgCalls(cli)
+        tgc.start()
+        tg_clients[uid] = tgc
+    return tg_clients[uid]
 
 
 # Sudo check
@@ -15,6 +28,9 @@ def is_sudo(uid):
     return sudo_db.find_one({"user_id": uid}) is not None
 
 
+# =========================
+#       /play
+# =========================
 @app.on_message(filters.command("play") & filters.private)
 async def play_cmd(client, message):
 
@@ -22,11 +38,9 @@ async def play_cmd(client, message):
         return
 
     if not message.reply_to_message or not message.reply_to_message.audio:
-        return await message.reply("Reply to an audio file with:\n/play")
+        return await message.reply("Reply to an audio with:\n/play")
 
-    audio = message.reply_to_message.audio
-
-    # download audio to temp file
+    # Download audio file
     file_path = await message.reply_to_message.download()
 
     ok = 0
@@ -35,30 +49,28 @@ async def play_cmd(client, message):
 
     assistants = assist_db.find()
 
-    for acc in assistants:     # FIXED - No async for
+    async for acc in assistants:       # FIXED async iteration
         uid = acc["user_id"]
 
         if uid not in active_clients:
             continue
 
-        cli = active_clients[uid]
-
-        # assistant must be in VC
-        if uid not in assistant_vc:
+        # Check VC session from DB
+        vc_session = await vc_db.find_one({"user_id": uid})
+        if not vc_session:
             not_in_vc += 1
             continue
 
-        chat_id = assistant_vc[uid]
+        chat_id = int(vc_session["chat_id"])
+        cli = active_clients[uid]
+        tgc = get_tgc(uid, cli)
 
         try:
-            # play/stream audio in VC
-            await cli.change_stream(
+            # Play in VC
+            await tgc.change_stream(
                 chat_id,
-                file_path,
-                video=False,          # audio only
-                audio=True
+                AudioPiped(file_path)
             )
-
             ok += 1
 
         except Exception as e:
@@ -66,13 +78,13 @@ async def play_cmd(client, message):
             err += 1
 
     msg = (
-        f"🎵 <b>PLAY RESULT</b>\n\n"
-        f"🟢 Playing in VC: <b>{ok}</b>\n"
+        f"🎵 <b>Play Result</b>\n\n"
+        f"🟢 Streaming in VC: <b>{ok}</b>\n"
         f"🟡 Not in VC: <b>{not_in_vc}</b>\n"
         f"🔴 Errors: <b>{err}</b>"
     )
 
     if not_in_vc > 0:
-        msg += "\n\n⚠️ Use <code>/join</code> first to join VC."
+        msg += "\n\n⚠️ Use <code>/join</code> first."
 
     await message.reply(msg)

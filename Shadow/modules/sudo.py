@@ -1,5 +1,5 @@
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pyrogram import filters
 from Shadow import app, OWNER_ID
 from Shadow.mongo import mongodb
@@ -7,7 +7,7 @@ from Shadow.mongo import mongodb
 sudo_db = mongodb.sudo
 
 
-# Convert time like: 30d, 10h, 20m → seconds
+# Convert time: 30d, 10h, 20m → seconds
 def parse_time(t):
     try:
         unit = t[-1]
@@ -33,9 +33,11 @@ def format_expiry(exp):
 # Auto delete expired sudo users
 async def clean_expired():
     now = int(time.time())
-    expired = sudo_db.find({"expire_at": {"$lte": now, "$ne": None}})
-    for x in expired:
-        sudo_db.delete_one({"user_id": x["user_id"]})
+
+    cursor = sudo_db.find({"expire_at": {"$lte": now, "$ne": None}})
+
+    async for x in cursor:   # FIXED
+        await sudo_db.delete_one({"user_id": x["user_id"]})
 
 
 @app.on_message(filters.command("addsudo") & filters.private)
@@ -54,14 +56,14 @@ async def addsudo(client, message):
     user_id = int(args[1])
     expire_at = None
 
-    # If time is provided
+    # If time provided
     if len(args) == 3:
         duration = parse_time(args[2])
         if duration is None:
             return await message.reply("Invalid time format! Use: 30d, 10h, 20m")
         expire_at = int(time.time()) + duration
 
-    sudo_db.update_one(
+    await sudo_db.update_one(
         {"user_id": user_id},
         {"$set": {"expire_at": expire_at}},
         upsert=True
@@ -92,7 +94,7 @@ async def insudo(client, message):
     if duration is None:
         return await message.reply("Invalid time format! Use: 30d, 10h, 20m")
 
-    user = sudo_db.find_one({"user_id": user_id})
+    user = await sudo_db.find_one({"user_id": user_id})
     if not user:
         return await message.reply("❌ User is not in sudo!")
 
@@ -104,7 +106,10 @@ async def insudo(client, message):
 
     new_exp = old_exp + duration
 
-    sudo_db.update_one({"user_id": user_id}, {"$set": {"expire_at": new_exp}})
+    await sudo_db.update_one(
+        {"user_id": user_id},
+        {"$set": {"expire_at": new_exp}}
+    )
 
     await message.reply(
         f"⏳ Time Increased!\n"
@@ -127,7 +132,7 @@ async def rmsudo(client, message):
 
     user_id = int(args[1])
 
-    sudo_db.delete_one({"user_id": user_id})
+    await sudo_db.delete_one({"user_id": user_id})
 
     await message.reply(f"❌ Removed from sudo:\nUserID: <code>{user_id}</code>")
 
@@ -140,11 +145,12 @@ async def sudolist(client, message):
 
     await clean_expired()
 
-    all_sudo = sudo_db.find()
+    cursor = sudo_db.find()
     text = "<b>🛡 SUDO USERS LIST</b>\n\n"
 
     count = 0
-    async for x in all_sudo:
+
+    async for x in cursor:   # FIXED async iteration
         user_id = x["user_id"]
         expire = x["expire_at"]
 

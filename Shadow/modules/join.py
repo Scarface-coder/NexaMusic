@@ -70,6 +70,7 @@ async def joingc_cmd(_, message):
     )
 
 
+
 # ================================
 # /join — JOIN VC (chat_id only)
 # ================================
@@ -85,7 +86,7 @@ async def join_vc_cmd(_, message):
     chat = args[1].strip()
 
     # Ensure numeric chat_id
-    if not chat.isdigit():
+    if not chat.lstrip('-').isdigit():
         return await message.reply("⚠️ Only numeric chat IDs are allowed for /join.")
 
     chat_id = int(chat)
@@ -99,10 +100,14 @@ async def join_vc_cmd(_, message):
         cli = active_clients[uid]
 
         try:
-            # check membership
+            # ensure assistant is a member first
             try:
                 await cli.get_chat_member(chat_id, uid)
             except UserNotParticipant:
+                not_in_gc += 1
+                continue
+            except PeerIdInvalid:
+                # maybe the bot hasn't interacted with the chat yet
                 not_in_gc += 1
                 continue
 
@@ -130,11 +135,11 @@ async def join_vc_cmd(_, message):
 
     msg = (
         f"🎧 <b>VC Join Result</b>\n\n🟢 VC Joined: <b>{ok}</b>\n"
-        f"🟡 Not in Group: <b>{not_in_gc}</b>\n🔴 Errors: <b>{err}</b>"
+        f"🟡 Not in Group / Peer Invalid: <b>{not_in_gc}</b>\n🔴 Errors: <b>{err}</b>"
     )
 
     if not_in_gc > 0:
-        msg += "\n⚠️ Make sure assistants are in the group first."
+        msg += "\n⚠️ Make sure assistants are in the group and the chat ID is correct."
 
     await message.reply(msg)
 
@@ -158,7 +163,7 @@ async def leave_vc_cmd(_, message):
             continue
 
         # ensure chat_id is numeric
-        if not str(chat).isdigit():
+        if not str(chat).lstrip('-').isdigit():
             vc_db.delete_one({"user_id": uid})
             continue
 

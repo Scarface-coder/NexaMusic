@@ -4,9 +4,9 @@ from Shadow import app, OWNER_ID
 from Shadow.mongo import mongodb
 from .sudo import sudo_db
 from .connect import active_clients
-from pytgcalls import PyTgClient
+from pytgcalls import PyTgCalls
 from pytgcalls.exceptions import GroupCallNotFound
-from pytgcalls.types.input_stream import InputAudioStream
+from pytgcalls.types.input_stream import AudioPiped
 
 assist_db = mongodb.assistants
 vc_db = mongodb.vc_sessions  # stores which assistant is in which VC
@@ -21,13 +21,14 @@ def is_sudo(uid):
 
 
 # ================================
-# TG CALL CLIENTS (v3)
+# TG CALL CLIENTS (v0.9.7)
 # ================================
 tg_clients = {}
 
 def get_tgcalls(uid, cli):
     if uid not in tg_clients:
-        tg = PyTgClient(client=cli)
+        tg = PyTgCalls(cli)
+        tg.start()
         tg_clients[uid] = tg
     return tg_clients[uid]
 
@@ -101,14 +102,9 @@ async def join_vc_cmd(_, message):
 
             # get tgcall client
             tgc = get_tgcalls(uid, cli)
-            if not tgc.is_connected:
-                await tgc.start()
 
-            # join VC (v3 uses InputAudioStream if needed later)
-            await tgc.join_group_call(
-                chat_id=int(chat),
-                input_stream=InputAudioStream('placeholder.raw')  # silent placeholder
-            )
+            # join VC with silent placeholder stream
+            await tgc.join_group_call(chat_id=int(chat), input_stream=AudioPiped("placeholder.mp3"))
 
             ok += 1
 
@@ -118,7 +114,6 @@ async def join_vc_cmd(_, message):
                 {"$set": {"chat_id": chat}},
                 upsert=True
             )
-
         except Exception as e:
             print(f"[VC JOIN ERROR] {e}")
             err += 1
@@ -155,8 +150,6 @@ async def leave_vc_cmd(_, message):
         cli = active_clients[uid]
         tgc = get_tgcalls(uid, cli)
         try:
-            if not tgc.is_connected:
-                await tgc.start()
             await tgc.leave_group_call(chat_id=int(chat))
             ok += 1
             vc_db.delete_one({"user_id": uid})
